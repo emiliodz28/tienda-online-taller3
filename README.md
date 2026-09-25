@@ -6,7 +6,7 @@ Proyecto académico de comercio electrónico con backend Node.js/Express en arqu
 
 - `backend/`: dominio, casos de uso, puertos y adaptadores REST/PostgreSQL.
 - `frontend/`: SPA organizada por autenticación, productos y pedidos.
-- `docs/`: arquitectura, endpoints y guía de WSL. AWS queda preparado para una etapa posterior, cuando esté activo el laboratorio.
+- Los documentos de entrega académica se preparan y entregan por separado en la plataforma escolar.
 
 ## Requisitos
 
