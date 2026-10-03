@@ -1,7 +1,11 @@
 import { calculateTotal, normalizeEmail, validateProduct, validateUser } from '../domain/entities.js';
 import { ConflictError, NotFoundError } from '../domain/errors.js';
 
-export function createUseCases({ users, products, orders }, passwordHasher) {
+export function createUseCases(
+  { users, products, orders, notifications = { orderCreated: async () => ({ customer: 'disabled', admin: 'disabled' }) } },
+  passwordHasher,
+  { paymentInstructions = '' } = {}
+) {
   return {
     register: async (data) => {
       validateUser(data);
@@ -45,7 +49,20 @@ export function createUseCases({ users, products, orders }, passwordHasher) {
           if (Number(product.stock) < quantity) throw new Error(`Inventario insuficiente para ${product.name}`);
           items.push({ productId: product.id, quantity, price: Number(product.price) });
         }
-        return orders.createWithItems(userId, items, calculateTotal(items));
+        const created = await orders.createWithItems(userId, items, calculateTotal(items));
+        let order = created;
+        let emailNotifications = { customer: 'failed', admin: 'failed' };
+        try {
+          const [customer, persistedOrder] = await Promise.all([
+            users.findById(userId),
+            orders.findById(created.id)
+          ]);
+          if (persistedOrder) order = persistedOrder;
+          emailNotifications = await notifications.orderCreated({ customer, order, paymentInstructions });
+        } catch (error) {
+          console.error(`No se pudieron enviar las notificaciones del pedido #${created.id}:`, error.message);
+        }
+        return { ...order, emailNotifications };
       },
       update: async (id, data, user) => { if (user.role !== 'admin') throw new Error('Solo administración puede cambiar el estado'); const x = await orders.updateStatus(id, data.status); if (!x) throw new NotFoundError('Pedido no encontrado'); return x; },
       remove: async (id, user) => { const order = await orders.findById(id); if (!order || (user.role !== 'admin' && String(order.user_id) !== String(user.id))) throw new NotFoundError('Pedido no encontrado'); await orders.remove(id); }

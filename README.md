@@ -35,3 +35,27 @@ La primera cuenta registrada tiene rol `user`. Después de registrarla, desde `~
 Las contraseñas se guardan con bcrypt; nunca se devuelven en respuestas. El registro crea usuarios sin acceso a los módulos. El administrador puede asignar independientemente acceso a productos y pedidos. El rol `admin` tiene acceso completo. Configura secretos propios antes de usar fuera de desarrollo.
 
 Para bases existentes, primero aplica `backend/sql/migrations/002_user_module_access.sql`.
+
+## Notificaciones de pedidos por correo
+
+El checkout React permite revisar producto, cantidad y total antes de confirmar. Al crear una orden, PostgreSQL la guarda con estado `pending` (mostrado en la tienda como **Pendiente de pago**) y confirma la transacción. Después, el caso de uso invoca el puerto `emailServicePortMethods.orderCreated`; el adaptador de infraestructura envía un comprobante al cliente y un aviso al administrador. El correo incluye el folio `PEDIDO-<id>`, artículos, cantidades, precios, total e instrucciones de pago. No se procesan pagos con tarjeta.
+
+El contrato está en `backend/src/application/ports.js`, el adaptador SMTP/console en `backend/src/infrastructure/notifications.js` y las plantillas HTML/texto en `backend/src/infrastructure/email-templates.js`. El diagrama actualizado está en [`architecture/notifications.mmd`](architecture/notifications.mmd).
+
+La aplicación usa `MAIL_MODE=console` por defecto para el desarrollo local. En ese modo imprime vistas previas en la terminal del backend, sin enviar correos. Para habilitar el envío real, agrega estas variables a `backend/.env` (no reemplaces otras variables que ya tengas):
+
+Cuando el host es `sandbox.smtp.mailtrap.io`, el adaptador serializa los correos y espera aproximadamente 10 segundos entre destinatarios para respetar el límite por ventana de la bandeja gratuita. Por eso, la respuesta de creación del pedido puede tardar alrededor de 10 segundos o más.
+
+```env
+MAIL_MODE=smtp
+SMTP_HOST=servidor.smtp.del-proveedor
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=usuario-del-correo
+SMTP_PASS=clave-smtp-o-clave-de-aplicacion
+SMTP_FROM=Nombre de la tienda <correo-remitente@dominio.com>
+ADMIN_EMAIL=correo-que-recibe-nuevos-pedidos@dominio.com
+PAYMENT_INSTRUCTIONS=Banco: ... | Titular: ... | CLABE: ... | Usa PEDIDO-<numero> como referencia.
+```
+
+Configura `PAYMENT_INSTRUCTIONS` con los datos de pago que realmente usarás y `ADMIN_EMAIL` con el buzón que debe recibir los avisos. Guarda las credenciales solo en el `.env` local, reinicia el backend y crea una orden de prueba. La respuesta distingue envíos completados, fallidos y vistas previas; si falla el correo, la orden ya confirmada se conserva para evitar que un reintento duplique la compra.

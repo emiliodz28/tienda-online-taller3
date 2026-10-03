@@ -2,6 +2,12 @@ import pg from 'pg';
 const { Pool } = pg;
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const cleanUser = ({ password_hash, ...user }) => user;
+const findOrderById = async (id) => {
+  const order = (await pool.query('SELECT * FROM orders WHERE id=$1', [id])).rows[0];
+  if (!order) return null;
+  order.items = (await pool.query('SELECT oi.*,p.name AS product_name FROM order_items oi JOIN products p ON p.id=oi.product_id WHERE oi.order_id=$1', [id])).rows;
+  return order;
+};
 export const repositories = {
   users: {
     create: async (u) => cleanUser((await pool.query('INSERT INTO users(name,email,password_hash,role,can_access_products,can_access_orders) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[u.name,u.email,u.passwordHash,u.role,u.can_access_products ?? false,u.can_access_orders ?? false])).rows[0]),
@@ -27,8 +33,8 @@ export const repositories = {
         await client.query('COMMIT'); return { ...order, items };
       } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     },
-    findById: async (id) => { const order=(await pool.query('SELECT * FROM orders WHERE id=$1',[id])).rows[0]; if(!order)return null; order.items=(await pool.query('SELECT oi.*,p.name AS product_name FROM order_items oi JOIN products p ON p.id=oi.product_id WHERE oi.order_id=$1',[id])).rows; return order; },
-    list: async (userId) => { const q=userId ? await pool.query('SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC',[userId]) : await pool.query('SELECT * FROM orders ORDER BY id DESC'); return Promise.all(q.rows.map(o=>this.findById(o.id))); },
+    findById: findOrderById,
+    list: async (userId) => { const q=userId ? await pool.query('SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC',[userId]) : await pool.query('SELECT * FROM orders ORDER BY id DESC'); return Promise.all(q.rows.map(({ id }) => findOrderById(id))); },
     updateStatus: async (id,status) => (await pool.query("UPDATE orders SET status=$2 WHERE id=$1 AND $2 IN ('pending','paid','shipped','cancelled') RETURNING *",[id,status])).rows[0] ?? null,
     remove: async (id) => (await pool.query('DELETE FROM orders WHERE id=$1',[id])).rowCount > 0
   }

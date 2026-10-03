@@ -10,6 +10,8 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [users, setUsers] = useState([]);
   const [tab, setTab] = useState('home');
+  const [checkoutProduct, setCheckoutProduct] = useState(null);
+  const [checkoutQuantity, setCheckoutQuantity] = useState(1);
   const [authMode, setAuthMode] = useState('login');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -47,10 +49,28 @@ export default function App() {
     setToken(null); setUser(null); setProducts([]); setOrders([]); setUsers([]); setTab('home');
   }
 
-  async function buy(product) {
+  function startCheckout(product) {
+    setCheckoutProduct(product);
+    setCheckoutQuantity(1);
+    setError('');
+    setTab('checkout');
+  }
+
+  async function placeOrder(event) {
+    event.preventDefault();
+    if (!checkoutProduct) return;
     try {
-      await request('/orders', { token, method: 'POST', body: JSON.stringify({ items: [{ productId: product.id, quantity: 1 }] }) });
-      setNotice('¡Pedido creado!'); await load();
+      const order = await request('/orders', { token, method: 'POST', body: JSON.stringify({ items: [{ productId: checkoutProduct.id, quantity: Number(checkoutQuantity) }] }) });
+      const mail = order.emailNotifications;
+      setNotice(mail?.customer === 'sent' && mail?.admin === 'sent'
+        ? `Pedido #${order.id} creado. Enviamos las instrucciones de pago a tu correo.`
+        : mail?.mode === 'console'
+          ? `Pedido #${order.id} pendiente de pago. Configura SMTP para enviar el correo; la vista previa quedó en la consola del backend.`
+          : `Pedido #${order.id} registrado como pendiente de pago, pero no se pudo enviar el correo. Contacta a la tienda.`);
+      setCheckoutProduct(null);
+      setCheckoutQuantity(1);
+      setTab('orders');
+      await load();
     } catch (e) { setError(e.message); }
   }
 
@@ -99,9 +119,11 @@ export default function App() {
 
     {tab === 'account' && <main className="account-page"><div className="account-card"><span className="eyebrow dark">ÁREA·11 / ACCESO DE JUGADOR</span><h2>{authMode === 'login' ? 'Vuelve al juego.' : 'Únete al equipo.'}</h2><p>Inicia sesión para acceder a tu cuenta y módulos autorizados.</p><form onSubmit={authenticate}>{authMode === 'register' && <label>Nombre<input name="name" required placeholder="Nombre de jugador"/></label>}<label>Correo<input name="email" type="email" required placeholder="jugador@correo.com"/></label><label>Contraseña<input name="password" type="password" minLength="8" required placeholder="Mínimo 8 caracteres"/></label><button className="cta full">{authMode === 'login' ? 'INICIAR SESIÓN' : 'CREAR CUENTA'} <span>↗</span></button></form><button className="switch-auth" onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}>{authMode === 'login' ? '¿Nuevo por aquí? Crea una cuenta' : '¿Ya tienes cuenta? Inicia sesión'}</button></div></main>}
 
-    {tab === 'catalog' && can(user, 'products') && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / BOOT ROOM</span><h2>LISTOS PARA<br/><em>EL PARTIDO.</em></h2><p>Selección de tenis de fútbol. Encuentra tu siguiente ventaja.</p></div><div className="catalog-grid">{products.map((p, index) => <article className="boot-card" key={p.id}><div className={`boot-art boot-${index % 4}`}><span className="boot-number">{String(p.id).padStart(2,'0')}</span><span className="boot-icon">⚽</span><span className="boot-word">ÁREA·11</span></div><div className="boot-details"><div><span className="boot-type">FOOTBALL BOOT / FG</span><h3>{p.name}</h3><p>{p.description || 'Tracción y control para dominar cada jugada.'}</p><span className="stock">{p.stock > 0 ? `${p.stock} PARES DISPONIBLES` : 'AGOTADO'}</span></div><strong>${Number(p.price).toFixed(2)}</strong></div><button className="add-boot" disabled={!p.stock || !can(user, 'orders')} onClick={() => buy(p)}>{can(user, 'orders') ? 'PEDIR ESTE PAR' : 'SOLICITA ACCESO A PEDIDOS'} <span>↗</span></button></article>)}</div>{!products.length&&<div className="empty-state">El administrador aún no ha agregado tenis al catálogo.</div>}</main>}
+    {tab === 'catalog' && can(user, 'products') && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / BOOT ROOM</span><h2>LISTOS PARA<br/><em>EL PARTIDO.</em></h2><p>Selección de tenis de fútbol. Encuentra tu siguiente ventaja.</p></div><div className="catalog-grid">{products.map((p, index) => <article className="boot-card" key={p.id}><div className={`boot-art boot-${index % 4}`}><span className="boot-number">{String(p.id).padStart(2,'0')}</span><span className="boot-icon">⚽</span><span className="boot-word">ÁREA·11</span></div><div className="boot-details"><div><span className="boot-type">FOOTBALL BOOT / FG</span><h3>{p.name}</h3><p>{p.description || 'Tracción y control para dominar cada jugada.'}</p><span className="stock">{p.stock > 0 ? `${p.stock} PARES DISPONIBLES` : 'AGOTADO'}</span></div><strong>${Number(p.price).toFixed(2)}</strong></div><button className="add-boot" disabled={!p.stock || !can(user, 'orders')} onClick={() => startCheckout(p)}>{can(user, 'orders') ? 'PEDIR ESTE PAR' : 'SOLICITA ACCESO A PEDIDOS'} <span>↗</span></button></article>)}</div>{!products.length&&<div className="empty-state">El administrador aún no ha agregado tenis al catálogo.</div>}</main>}
 
-    {tab === 'orders' && can(user, 'orders') && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / TU TEMPORADA</span><h2>TUS <em>PEDIDOS.</em></h2><p>Consulta el estado y los detalles de tus pedidos.</p></div>{orders.length ? <div className="order-list">{orders.map(order => <article className="order-row" key={order.id}><div><span className="boot-type">PEDIDO #{order.id}</span><h3>{new Date(order.created_at).toLocaleDateString('es-MX')}</h3></div><div>{order.items?.map(item => <p key={item.id}>{item.quantity} × {item.product_name}</p>)}</div><span className="order-status">{order.status}</span><strong>${Number(order.total).toFixed(2)}</strong></article>)}</div> : <div className="empty-state">Todavía no tienes pedidos. Explora los tenis para encontrar tu siguiente par.</div>}</main>}
+    {tab === 'checkout' && checkoutProduct && can(user, 'orders') && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / CHECKOUT</span><h2>CONFIRMA<br/><em>TU JUGADA.</em></h2><p>Revisa tu pedido antes de registrarlo. Recibirás por correo los detalles y las instrucciones de pago.</p></div><form className="checkout-card" onSubmit={placeOrder}><div className="checkout-product"><span className="boot-type">PRODUCTO</span><h3>{checkoutProduct.name}</h3><p>{checkoutProduct.description || 'Calzado de fútbol Área·11'}</p><strong>${Number(checkoutProduct.price).toFixed(2)} por par</strong></div><label>CANTIDAD<input type="number" min="1" max={checkoutProduct.stock} value={checkoutQuantity} onChange={(event) => setCheckoutQuantity(Math.min(checkoutProduct.stock, Math.max(1, Number(event.target.value))))} required /></label><div className="checkout-total"><span>Total del pedido</span><strong>${(Number(checkoutProduct.price) * Number(checkoutQuantity)).toFixed(2)}</strong></div><p className="checkout-note">El pedido quedará como <b>Pendiente de pago</b>. Se enviará un comprobante a tu correo y una notificación al administrador.</p><div className="checkout-actions"><button type="button" className="text-link" onClick={() => setTab('catalog')}>VOLVER AL CATÁLOGO</button><button className="cta">CONFIRMAR PEDIDO <span>↗</span></button></div></form></main>}
+
+    {tab === 'orders' && can(user, 'orders') && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / TU TEMPORADA</span><h2>TUS <em>PEDIDOS.</em></h2><p>Consulta el estado y los detalles de tus pedidos.</p></div>{orders.length ? <div className="order-list">{orders.map(order => <article className="order-row" key={order.id}><div><span className="boot-type">PEDIDO #{order.id}</span><h3>{new Date(order.created_at).toLocaleDateString('es-MX')}</h3></div><div>{order.items?.map(item => <p key={item.id}>{item.quantity} × {item.product_name}</p>)}</div><span className="order-status">{order.status === 'pending' ? 'Pendiente de pago' : order.status}</span><strong>${Number(order.total).toFixed(2)}</strong></article>)}</div> : <div className="empty-state">Todavía no tienes pedidos. Explora los tenis para encontrar tu siguiente par.</div>}</main>}
 
     {tab === 'manage' && user?.role === 'admin' && <main className="content-page"><div className="page-heading"><span className="eyebrow dark">ÁREA·11 / ADMINISTRACIÓN</span><h2>BOOT <em>ROOM.</em></h2><p>Gestiona los tenis disponibles en la tienda.</p></div><form className="product-form" onSubmit={addProduct}><label>Modelo<input name="name" required placeholder="Ej. Phantom GX Elite"/></label><label>Descripción<input name="description" placeholder="Control, velocidad, superficie..."/></label><label>Precio<input name="price" type="number" min="0" step="0.01" required/></label><label>Pares<input name="stock" type="number" min="0" required/></label><button className="cta">AGREGAR TENIS ↗</button></form><div className="manage-list">{products.map(p=><div className="manage-row" key={p.id}><b>{p.name}</b><span>${Number(p.price).toFixed(2)} · {p.stock} pares</span><button onClick={()=>removeProduct(p.id)}>ELIMINAR ×</button></div>)}</div></main>}
 

@@ -1,0 +1,39 @@
+flowchart LR
+  subgraph Frontend[Frontend - React + Vite]
+    SPA[SPA: autenticación, catálogo, checkout y pedidos]
+    API[Adaptador HTTP: src/api.js]
+    SPA --> API
+  end
+  subgraph Entrada[Adaptador de entrada]
+    HTTP[Express REST + JWT]
+  end
+  subgraph Aplicacion[Aplicación]
+    UC[Casos de uso]
+    RepoPort[Puertos de repositorio]
+    EmailPort[Puerto de salida: EmailServicePort\norderCreated]
+    UC --> RepoPort
+    UC --> EmailPort
+  end
+  subgraph Dominio[Dominio]
+    Rules[Usuario · Producto · Pedido\nValidación · Stock · Total]
+  end
+  subgraph Salida[Adaptadores de salida]
+    PgAdapter[PostgresAdapter]
+    Hash[bcrypt + JWT]
+    NodeMail[NodeMailAdapter\ninfrastructure/notifications.js]
+    Templates[Plantillas\ninfrastructure/email-templates.js]
+    NodeMail --> Templates
+  end
+  DB[(PostgreSQL\nusers · products · orders · order_items)]
+  SMTP[Mailtrap SMTP sandbox]
+  Customer[Correo del cliente]
+  Admin[Correo del administrador]
+  API -->|HTTP JSON + JWT| HTTP
+  HTTP --> UC
+  UC --> Rules
+  RepoPort --> PgAdapter --> DB
+  HTTP --> Hash
+  EmailPort -. contrato .-> NodeMail
+  NodeMail -->|SMTP; secretos solo en .env| SMTP
+  SMTP --> Customer
+  SMTP --> Admin
